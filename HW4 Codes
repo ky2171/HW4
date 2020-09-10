@@ -1,0 +1,137 @@
+#Q1
+BV_tradeoff_train <- read.csv("BVTradeoff_train.csv")
+BV_tradeoff_test <- read.csv("BVTradeoff_test.csv")
+summary(BV_tradeoff_train)
+summary(BV_tradeoff_test)
+str(BV_tradeoff_train )
+str(BV_tradeoff_test )
+
+#1(a)
+fit1 = lm(Y.train~ X.train, data=BV_tradeoff_train)
+fit2 = lm(Y.train ~ X.train + I(X.train^2), data = BV_tradeoff_train)
+fit3 = lm(Y.train ~ X.train + I(X.train^2) + I(X.train^3), data = BV_tradeoff_train)
+fit4 = lm(Y.train ~ X.train + I(X.train^2) + I(X.train^3) + I(X.train^4), data = BV_tradeoff_train)
+fit5 = lm(Y.train ~ X.train + I(X.train^2) + I(X.train^3) + I(X.train^4) + I(X.train^5), data = BV_tradeoff_train)
+
+#1(b)
+model = list(fit1,fit2,fit3,fit4,fit5)
+expected_errors = list()
+ 
+for(i in 1:5) {
+  predicted_y =predict(model[[i]], newdata=BV_tradeoff_test)
+  expected_errors = c(expected_errors, mean((BV_tradeoff_test$Y.test-predicted_y)^2))
+}
+
+expected_errors
+
+#1(c)
+model = list(fit1,fit2,fit3,fit4,fit5)
+bias = list()
+BV_tradeoff_test$Y.test <- BV_tradeoff_test$X.test^3 + 2*BV_tradeoff_test$X.test^2 + 3*BV_tradeoff_test$X.test +1
+
+for (i in 1:5) {
+  predict.y = predict(model[[i]], newdata =BV_tradeoff_test)
+  bias = c(bias, mean((BV_tradeoff_test$Y.test-predict.y)^2))
+  }
+
+bias
+
+#1(d)
+model = list(fit1,fit2,fit3,fit4,fit5)
+variance = list()
+y = list()
+
+for (i in 1:5) {
+  predict.y =predict(model[[i]], newdata= BV_tradeoff_test)
+  variance = c(variance, mean(predict.y-mean(predict.y))^2)
+}
+  
+variance
+
+#Q2
+##(a)
+RTB <- read.csv("RTB.csv")
+head(RTB)
+str(RTB)
+
+install.packages('glmnet')
+library("caret")
+
+set.seed(88)
+training.rows <- sample(1:nrow(RTB), nrow(RTB)*0.7)
+RTB_training = RTB[training.rows,]
+RTB_testing = RTB[-training.rows,]
+
+
+X_features = data.frame(RTB_training[, 3:9])
+Y_variable = RTB_training [, 2]
+
+x_train <- model.matrix(~.-1, X_features)
+
+library('glmnet')
+lasso_model = cv.glmnet(x = x_train, y = as.factor(Y_variable), interpret = FALSE , family = "binomial", alpha=1, nfolds = 7)
+best_lambda <- lasso_model$lambda[which.min(lasso_model$cvm)]
+best_lambda
+lasso_model
+#2(b)
+
+install.packages('AUC',repos='https://mirrors.tuna.tsinghua.edu.cn/CRAN/')
+library('AUC')
+
+X_Testing = data.matrix(RTB_testing[,3:9])
+predictValidation = predict(lasso_model, newx=X_Testing  , type="response")
+ROCRpred = prediction(predictTest, RTB_testing$dc)
+
+#Performance function
+ROCRperf = performance(ROCRpred,"tpr","fpr")
+
+#Plot OUT OF SAMPLE ROC CURVE
+plot(ROCRperf, colorize=TRUE, print.cutoffs.at=seq(0,1,by=0.1), text.adj=c(-0.2,1.7))
+
+predictValidation.n = as.numeric(predictValidation)
+RTB_testing.f = as.factor(RTB_testing$dc)
+
+ROC_validation = roc(predictValidation.n,RTB_testing.f)
+AUC_validation = auc(ROC_validation)
+print(paste("The out of sample AUC is",AUC_validation))
+
+#Q4
+hotel_p <- read.csv("hotel_pricing.csv")
+
+summary(hotel_p)
+
+
+model.matrix(~ city - 1, hotel_p)
+hotel_dummy <- data.frame(hotel_p[ , ! colnames(hotel_p) %in% "city"],
+                          model.matrix( ~ city - 1, hotel_p))
+
+model.matrix(~ room - 1, hotel_p)
+hotel_dummy1 <- data.frame(hotel_dummy[ , ! colnames(hotel_dummy) %in% "room"],
+                           model.matrix( ~ room - 1, hotel_p))
+hotel_dummy1
+hotel_dummy0 <- data.frame(hotel_dummy1[ , ! colnames(hotel_dummy1) %in% "price"])
+hotel_dummy0
+hotel_dummy0$log_price <- log(hotel_dummy1$price)
+
+trControl <- trainControl(method  = "cv", number  = 5)
+set.seed(888)
+training <- sample(1:nrow(hotel_p), nrow(hotel_p)*0.7)
+h_training = hotel_dummy0[training,]
+h_testing = hotel_dummy0[-training,]
+
+library(caret)
+
+x <- as.matrix(h_training[,2:16])
+str(x)
+y <- h_training[,17]
+str(y)
+
+library(glmnet)
+lasso_cv<- cv.glmnet(x,y,family = "gaussian", alpha = 1)
+lasso_cv
+lasso_model = glmnet(x,y, family="gaussian", alpha=1, lambda=0.001335)
+
+beta = as.matrix(coefficients(lasso_model))
+error_test = h_testing$log_price - as.matrix(h_testing[,2:16])%*%beta[3:17] - beta[1]
+R_squared_test = 1-sum(error_test^2)/sum((h_testing$log_price-mean(h_training$log_price))^2)
+print(paste("The out-of-sample R-squared is", R_squared_test))
